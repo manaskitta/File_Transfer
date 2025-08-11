@@ -5,7 +5,7 @@ import signal
 
 # Initialize Socket Instance
 sock = socket.socket()
-sock.settimeout(30)  # 30 second timeout
+sock.settimeout(60)  # 60 second timeout
 print ("Socket created successfully.")
 
 # Graceful shutdown handler
@@ -17,7 +17,12 @@ signal.signal(signal.SIGINT, signal_handler)
 
 # Defining port and host
 port = 8800
-host = ''
+host = '0.0.0.0'
+
+# Folder containing files for transfer
+FILES_DIR = "server_files"
+if not os.path.exists(FILES_DIR):
+    os.makedirs(FILES_DIR)
 
 # Set to True if you want server to close after one client
 CLOSE_AFTER_ONE_CLIENT = True
@@ -45,15 +50,30 @@ try:
                 print("Client disconnected before sending message")
                 con.close()
                 continue
+
+             # NEW STEP: Send file list to client
+            files = os.listdir(FILES_DIR)
+            if not files:
+                print("No files available in server_files folder!")
+                con.close()
+                continue
+            file_list = "\n".join(files)
+            con.send(file_list.encode())
+
+            # Receive requested file name
+            requested_file = con.recv(1024).decode().strip()
+            print(f"Client requested: {requested_file}")
+
+            file_path = os.path.join(FILES_DIR, requested_file)
             
             # Check if file exists
-            if not os.path.exists('server-file.txt'):
-                print("Error: server-file.txt not found!")
+            if not os.path.exists(file_path):
+                print(f"Error: Requested file '{requested_file}' does not exist.")
                 con.close()
                 continue
                 
             # Read File in binary
-            file = open('server-file.txt', 'rb')
+            file = open(file_path, 'rb')
             line = file.read(1024)
             bytes_sent = 0
             start_time = time.time()  # Start timing the transfer
