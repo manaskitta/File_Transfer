@@ -1,56 +1,90 @@
 import socket
+import os
+import sys
 import time
 
-# Initialize Socket Instance
-sock = socket.socket()
-sock.settimeout(60)  # 60 second timeout
-print ("Socket created successfully.")
+SERVER_IP = "127.0.0.1"  # Change to your server's IP
+PORT = 8800
 
-# Defining port and host
-port = 8800
-host = 'localhost'  #Change to server IP for a different machine.
-
-try:
-    # Connect socket to the host and port
-    sock.connect((host, port))
-    print('Connection Established.')
-    
-    # Send a greeting to the server
-    sock.send('A message from the client'.encode())
-    print('Message sent to server')
-
-    # Receive list of files from server
+def download_file(sock):
     file_list = sock.recv(4096).decode()
+    if file_list == "NO_FILES":
+        print("[CLIENT] No files available.")
+        return
     print("\nAvailable files:\n" + file_list)
 
-    # Ask for file name
-    file_name = input("\nEnter the file name you want to download: ").strip()
-    sock.send(file_name.encode())
+    filename = input("Enter file name to download: ").strip()
+    sock.send(filename.encode())
 
-    # Write File in binary
-    file = open(file_name, 'wb')
-    bytes_received = 0
-    start_time = time.time()  # Start timing the transfer
+    status = sock.recv(1024).decode()
+    if status != "FILE_OK":
+        print("[CLIENT] File not found on server.")
+        return
 
-    # Keep receiving data from the server
-    line = sock.recv(1024)
+    with open(filename, "wb") as f:
+        bytes_received = 0
+        start_time = time.time()
+        while True:
+            data = sock.recv(1024)
+            if not data:
+                break
+            f.write(data)
+            bytes_received += len(data)
+        elapsed = time.time() - start_time
+    print(f"[CLIENT] Downloaded {filename} ({bytes_received} bytes) in {elapsed:.2f}s.")
 
-    while(line):
-        file.write(line)
-        bytes_received += len(line)
-        # Simple progress indicator
-        if bytes_received % 1024 == 0:  # Show progress every 1KB
-            print(f"Received {bytes_received} bytes...")
-        line = sock.recv(1024)
+def upload_file(sock):
+    local_file = input("Enter local file path to upload: ").strip()
+    if not os.path.exists(local_file):
+        print("[CLIENT] File not found.")
+        return
 
-    file.close()
-    transfer_time = time.time() - start_time
-    speed = bytes_received / transfer_time if transfer_time > 0 else 0
-    print(f'File has been received successfully. Total bytes: {bytes_received}')
-    print(f'Transfer speed: {speed:.2f} bytes/second')
+    sock.recv(1024)  # Expect SEND_FILENAME
+    filename = os.path.basename(local_file)
+    sock.send(filename.encode())
 
-except Exception as e:
-    print(f"Client error: {e}")
-finally:
-    sock.close()
-    print('Connection Closed.')
+    sock.recv(1024)  # Expect SEND_FILE
+    with open(local_file, "rb") as f:
+        bytes_sent = 0
+        start_time = time.time()
+        while chunk := f.read(1024):
+            sock.send(chunk)
+            bytes_sent += len(chunk)
+        elapsed = time.time() - start_time
+    print(f"[CLIENT] Uploaded {filename} ({bytes_sent} bytes) in {elapsed:.2f}s.")
+
+def main():
+    try:
+        with socket.socket() as sock:
+            sock.connect((SERVER_IP, PORT))
+
+            msg = sock.recv(1024).decode()
+            if msg.startswith("DENIED"):
+                print(msg)
+                return
+
+            if msg == "PASSWORD:":
+                password = input("Enter password: ").strip()
+                sock.send(password.encode())
+
+            auth_response = sock.recv(1024).decode()
+            if auth_response != "AUTH_OK":
+                print(auth_response)
+                return
+
+            menu = sock.recv(1024).decode()
+            choice = input(menu).strip()
+            sock.send(choice.encode())
+
+            if choice == "1":
+                download_file(sock)
+            elif choice == "2":
+                upload_file(sock)
+            else:
+                print("[CLIENT] Invalid choice.")
+
+    except Exception as e:
+        print(f"[CLIENT] Error: {e}")
+
+if __name__ == "__main__":
+    main()

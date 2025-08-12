@@ -2,109 +2,144 @@ import socket
 import os
 import time
 import signal
+import sys
 
-# Initialize Socket Instance
-sock = socket.socket()
-sock.settimeout(60)  # 60 second timeout
-print ("Socket created successfully.")
+# =======================
+# CONFIGURATION
+# =======================
+HOST = "0.0.0.0"
+PORT = 8800
+FILES_DIR = "server_files"
+CLIENTS_FILE = "allowed_clients.txt"
+CLOSE_AFTER_ONE_CLIENT = False
 
-# Graceful shutdown handler
+# =======================
+# LOAD ALLOWED CLIENTS
+# =======================
+def load_allowed_clients(filepath):
+    allowed = {}
+    if os.path.exists(filepath):
+        with open(filepath, "r") as f:
+            for line in f:
+                parts = line.strip().split()
+                if len(parts) >= 2:
+                    ip, pwd = parts[0], parts[1]
+                    allowed[ip] = pwd
+    return allowed
+
+ALLOWED_CLIENTS = load_allowed_clients(CLIENTS_FILE)
+
+# Ensure server_files exists
+os.makedirs(FILES_DIR, exist_ok=True)
+
+# =======================
+# SHUTDOWN HANDLER
+# =======================
 def signal_handler(sig, frame):
-    print("\nShutting down server gracefully...")
-    sock.close()
-    exit(0)
+    print("\n[SERVER] Shutting down gracefully...")
+    sys.exit(0)
 signal.signal(signal.SIGINT, signal_handler)
 
-# Defining port and host
-port = 8800
-host = '0.0.0.0'
+# =======================
+# FILE TRANSFER HELPERS
+# =======================
+def send_file(con, filename):
+    """Send a file to the client."""
+    file_path = os.path.join(FILES_DIR, filename)
+    if not os.path.exists(file_path):
+        con.send("FILE_NOT_FOUND".encode())
+        return
 
-# Folder containing files for transfer
-FILES_DIR = "server_files"
-if not os.path.exists(FILES_DIR):
-    os.makedirs(FILES_DIR)
+    con.send("FILE_OK".encode())
+    with open(file_path, "rb") as f:
+        bytes_sent = 0
+        start_time = time.time()
+        while chunk := f.read(1024):
+            con.send(chunk)
+            bytes_sent += len(chunk)
+        elapsed = time.time() - start_time
+    print(f"[SERVER] Sent {filename} ({bytes_sent} bytes) in {elapsed:.2f}s.")
 
-# Set to True if you want server to close after one client
-CLOSE_AFTER_ONE_CLIENT = True
-
-try:
-    # binding to the host and port
-    sock.bind((host, port))
-    print(f"Server bound to port {port}")
-
-    # Accepts up to 5 connections
-    sock.listen(5) 
-    print('Socket is listening...')
-
-    while True:
-        try:
-            # Establish connection with the clients.
-            con, addr = sock.accept()
-            print(f'Connected with client at {addr[0]}:{addr[1]}')
-
-            # Get data from the client
+def receive_file(con, filename):
+    """Receive a file from the client."""
+    file_path = os.path.join(FILES_DIR, filename)
+    with open(file_path, "wb") as f:
+        bytes_received = 0
+        start_time = time.time()
+        while True:
             data = con.recv(1024)
-            if data:
-                print(f"Client message: {data.decode()}")
-            else:
-                print("Client disconnected before sending message")
-                con.close()
-                continue
+            if not data:
+                break
+            f.write(data)
+            bytes_received += len(data)
+        elapsed = time.time() - start_time
+    print(f"[SERVER] Received {filename} ({bytes_received} bytes) in {elapsed:.2f}s.")
 
-             # NEW STEP: Send file list to client
-            files = os.listdir(FILES_DIR)
-            if not files:
-                print("No files available in server_files folder!")
-                con.close()
-                continue
-            file_list = "\n".join(files)
-            con.send(file_list.encode())
+# =======================
+# CLIENT HANDLER
+# =======================
+def handle_client(con, addr):
+    client_ip = addr[0]
+    print(f"[SERVER] Connection from {client_ip}:{addr[1]}")
 
-            # Receive requested file name
-            requested_file = con.recv(1024).decode().strip()
-            print(f"Client requested: {requested_file}")
+    # Whitelist check
+    if client_ip not in ALLOWED_CLIENTS:
+        con.send("DENIED: IP not allowed.".encode())
+        print(f"[SERVER] Denied connection from {client_ip}")
+        return
 
-            file_path = os.path.join(FILES_DIR, requested_file)
-            
-            # Check if file exists
-            if not os.path.exists(file_path):
-                print(f"Error: Requested file '{requested_file}' does not exist.")
-                con.close()
-                continue
-                
-            # Read File in binary
-            file = open(file_path, 'rb')
-            line = file.read(1024)
-            bytes_sent = 0
-            start_time = time.time()  # Start timing the transfer
-            
-            # Keep sending data to the client
-            while(line):
-                con.send(line)
-                bytes_sent += len(line)
-                # Simple progress indicator
-                if bytes_sent % 1024 == 0:  # Show progress every 1KB
-                    print(f"Sent {bytes_sent} bytes...")
-                line = file.read(1024)
-            
-            file.close()
-            transfer_time = time.time() - start_time
-            speed = bytes_sent / transfer_time if transfer_time > 0 else 0
-            print(f'File has been transferred successfully. Total bytes sent: {bytes_sent}')
-            print(f'Transfer speed: {speed:.2f} bytes/second')
+    # Ask for password
+    con.send("PASSWORD:".encode())
+    password = con.recv(1024).decode().strip()
+    if password != ALLOWED_CLIENTS[client_ip]:
+        con.send("DENIED: Wrong password.".encode())
+        print(f"[SERVER] Wrong password from {client_ip}")
+        return
 
-        except Exception as e:
-            print(f"Error handling client: {e}")
-        finally:
-            con.close()
-            
-        # Optional: Close server after one client
-        if CLOSE_AFTER_ONE_CLIENT:
-            print("Server will close after handling one client.")
-            break
+    con.send("AUTH_OK".encode())
+    print(f"[SERVER] {client_ip} authenticated.")
 
-except Exception as e:
-    print(f"Server error: {e}")
-finally:
-    sock.close()
-    print("Server socket closed.")
+    # Send menu
+    menu = "\nSelect an option:\n1. Download file\n2. Upload file\nChoice: "
+    con.send(menu.encode())
+    choice = con.recv(1024).decode().strip()
+
+    if choice == "1":
+        # Send file list
+        files = os.listdir(FILES_DIR)
+        if not files:
+            con.send("NO_FILES".encode())
+            return
+        con.send("\n".join(files).encode())
+
+        requested_file = con.recv(1024).decode().strip()
+        send_file(con, requested_file)
+
+    elif choice == "2":
+        con.send("SEND_FILENAME".encode())
+        filename = con.recv(1024).decode().strip()
+        con.send("SEND_FILE".encode())
+        receive_file(con, filename)
+
+# =======================
+# MAIN SERVER LOOP
+# =======================
+def main():
+    with socket.socket() as sock:
+        sock.bind((HOST, PORT))
+        sock.listen(5)
+        print(f"[SERVER] Listening on {HOST}:{PORT}")
+
+        while True:
+            try:
+                con, addr = sock.accept()
+                with con:
+                    handle_client(con, addr)
+            except Exception as e:
+                print(f"[SERVER] Error: {e}")
+
+            if CLOSE_AFTER_ONE_CLIENT:
+                break
+
+if __name__ == "__main__":
+    main()

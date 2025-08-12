@@ -1,191 +1,127 @@
+Here’s an updated **concise** README that adds your **file upload from client to server** feature without making the file bloated:
+
+---
+
 # Python Socket File Transfer Project
 
-A Python socket programming project that demonstrates client-server file transfer over TCP/IP.  
-This project now supports **cross-system file transfers** and **multiple file selection from the client side**.
+A Python socket programming project demonstrating **client-server file transfers** over TCP/IP.
+Now supports **cross-system transfers**, **multiple file selection**, and **client-to-server uploads**.
 
 ---
 
 ## 🚀 Features
 
-- **TCP Socket Communication** – Reliable data transfer between client and server across networks
-- **Cross-System Support** – Client can connect from another machine on the same LAN or via VPN
-- **Multiple File Selection** – Client can request a file from a list maintained by the server
-- **Binary File Transfer** – Supports any file type with progress tracking
-- **Error Handling** – Graceful recovery from network and file errors
-- **Performance Monitoring** – Shows transfer speed and progress indicators
-- **Timeout Protection** – Prevents hanging on slow/no connections
-- **Graceful Shutdown** – Proper resource cleanup on server exit
+* **TCP Socket Communication** – Reliable transfers over LAN/VPN
+* **Cross-System Support** – Client can connect from another machine
+* **Multiple File Selection** – Download files from server’s list
+* **Client File Upload** – Client can send files to the server’s `server_files/` folder
+* **Binary Transfer** – Works for any file type
+* **Progress & Speed Tracking**
+* **Error Handling** & Timeout Protection
+* **Whitelist + Password Authentication** (optional)
 
 ---
 
 ## 📋 Prerequisites
 
-- Python **3.6** or higher  
-- Basic understanding of networking concepts  
-- For cross-system transfer: client and server should be on the same network or connected via VPN
+* Python **3.6+**
+* Server & client on same network (or via VPN)
 
 ---
 
-## 🛠️ Installation & Setup
+## 🛠 Setup
 
-### 1️⃣ Clone the Repository
-```
+**1️⃣ Clone Repo**
+
+```bash
 git clone https://github.com/manaskitta/python-socket-file-transfer.git
 cd python-socket-file-transfer
 ```
 
-### 2️⃣ Verify Python Installation
-```
-python --version
-# or
-python3 --version
-```
+**2️⃣ Prepare Folders**
 
-### 3️⃣ Prepare Server Files
-Place any files you want to make available for download inside the `server_files/` folder.
+* Put downloadable files in `server_files/`
+* For uploads, server will store incoming files in the same folder
 
 ---
 
-## 🚀 How to Run
+## 🚦 Usage
 
-### **Step 1: Start the Server**
-On the **server machine**:
-```
+**Start Server**
+
+```bash
 python server.py
 ```
-**Example Output:**
-```
-Socket created successfully.
-Server bound to port 8800
-Socket is listening...
-Available files:
-  1. file1.txt
-  2. image.png
-  3. document.pdf
-```
 
-> 💡 For cross-system communication, use the server’s LAN IP (found via `ipconfig` or `ifconfig`).
+**Start Client**
 
----
-
-### **Step 2: Start the Client**
-On the **client machine** (same or different machine in the network):
-```
+```bash
 python client.py
 ```
 
-**Client Output Example:**
+**Client Menu Example**
+
 ```
-Available files on server:
-1. file1.txt
-2. image.png
-3. document.pdf
-Enter the number of the file you want to download: 2
-Connected to server at 192.168.1.10:8800
-Requesting 'image.png'...
-File received successfully. Total bytes: 102400
-Transfer speed: 25600.00 bytes/sec
+Enter password: mylocalpass
+
+Select an option:
+1. Download file
+2. Upload file
+Choice: 2
+Enter local file path to upload: C:\path\to\file.txt
+[CLIENT] Upload complete.
 ```
 
 ---
 
-### **Step 3: Verify Download**
-The requested file will be saved in the client’s working directory.
+## 🔧 Config
 
----
+**In `server.py`:**
 
-## 🔧 Configuration
-
-### **Server Settings** (`server.py`)
-```
-HOST = ''                   # Empty = accept connections from any IP (cross-system)
-PORT = 8800                 # Port to listen on
-CHUNK_SIZE = 1024           # Data chunk size
-SERVER_FILES_DIR = 'server_files'  # Directory containing available files
+```python
+HOST = ''                # Accept from any IP
+PORT = 8800
+SERVER_FILES_DIR = 'server_files'
 ```
 
-### **Client Settings** (`client.py`)
-```
-HOST = '192.168.x.x'        # Server machine's LAN IP
+**In `client.py`:**
+
+```python
+HOST = '192.168.x.x'     # Server LAN IP
 PORT = 8800
 ```
-
-**Find the Server LAN IP:**
-- **Windows:** `ipconfig` and look for `IPv4 Address`
-- **Linux/Mac:** `ifconfig` or `ip addr`
 
 ---
 
 ## 📚 How It Works
 
-### **Server Flow**
-1. Initializes socket and binds to `HOST:PORT`
-2. Lists all files in `server_files/`
-3. Sends file list to the client upon connection
-4. Receives file selection from the client
-5. Streams the file in binary chunks, tracking progress
-6. Closes the connection
+**Server**
 
-### **Client Flow**
-1. Connects to the server using IP and port
-2. Receives available file list
-3. Sends selected file choice to the server
-4. Receives the file and writes it locally
-5. Displays transfer progress and speed
-6. Closes the socket
+1. Starts socket, binds to HOST\:PORT
+2. Lists files in `server_files/`
+3. Accepts client connection & authenticates
+4. Sends file list for downloads or receives file uploads
+5. Saves uploaded files to `server_files/`
+
+**Client**
+
+1. Connects to server
+2. Authenticates
+3. Chooses **Download** or **Upload**
+4. Transfers file in binary chunks with progress tracking
 
 ---
 
 ## 🐛 Troubleshooting
 
-**Connection Refused**
-- Ensure server is running first
-- For cross-system, use the server’s LAN IP, not `localhost`
-- Check firewall on the server machine and allow port 8800
-
-**File Not Found**
-- File must be present in `server_files/` directory
-
-**Port Already in Use**
-```
-# Windows
-netstat -ano | findstr :8800
-taskkill /PID  /F
-
-# Linux/Mac
-lsof -i :8800
-kill -9 
-```
-
----
-
-## 🎯 Learning Objectives
-
-This project demonstrates:
-- **Socket Programming** in Python
-- **Client-Server Communication** patterns
-- **Binary File Transfer** with chunked sending
-- **Progress & Speed Tracking**
-- **Error Handling** in networked applications
-
----
-
-## 🤝 Contributing
-
-1. Fork the repository
-2. Create a new branch (`git checkout -b feature/AmazingFeature`)
-3. Commit changes (`git commit -m 'Add some AmazingFeature'`)
-4. Push branch (`git push origin feature/AmazingFeature`)
-5. Open a Pull Request
+* **Connection refused** → Start server first & check firewall
+* **File not found on upload** → Use correct absolute path without quotes in PowerShell
+* **Port in use** → Change port or free it
 
 ---
 
 ## 📝 License
-This project is available under the **MIT License** – see [LICENSE](LICENSE) for details.
+
+MIT License – see LICENSE for details.
 
 ---
-
-**Now supports cross-system transfers + multiple file selection 🚀**
-```
-
-***
